@@ -358,3 +358,15 @@ fn test_remove() {
     assert!(value.is_none());
     drop(value);
 }
+
+#[test]
+fn test_clear() {
+    let mut memo = MemoMap::new();
+    memo.insert(1, "one");
+    memo.insert(2, "two");
+    assert_eq!(memo.len(), 2);
+    assert!(!memo.is_empty());
+    memo.clear();
+    assert_eq!(memo.len(), 0);
+    assert!(memo.is_empty());
+}
