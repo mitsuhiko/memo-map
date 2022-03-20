@@ -11,7 +11,8 @@ A concurrent insert only hash map.
 This crate implements a “memo map” which is in many ways similar to a HashMap with some crucial differences:
 
 * Unlike a regular hash map, a memo map is thread safe and synchronized.
-* Once a value has been placed in the memo map it can be neither removed nor replaced.
+* Adding or retrieving keys works through a shared reference, removing only
+  through a mutable reference.
 * Retrieving a value from a memo map returns a plain old reference.
 
 ```rust
