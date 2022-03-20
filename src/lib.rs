@@ -118,6 +118,15 @@ where
         }
     }
 
+    /// Inserts a value into the memo map replacing the old value.
+    ///
+    /// This has the same restrictions as [`remove`](Self::remove) and
+    /// [`clear`](Self::clear) in that it requires a mutable reference to
+    /// the map.
+    pub fn replace(&mut self, key: K, value: V) {
+        lock!(self.inner).insert(key, Box::new(value));
+    }
+
     /// Returns true if the map contains a value for the specified key.
     ///
     /// The key may be any borrowed form of the map's key type, but [`Hash`] and
@@ -381,4 +390,12 @@ fn test_ref_after_resize() {
         dbg!(key, val);
         assert_eq!(memo.get(&key), Some(val));
     }
+}
+
+#[test]
+fn test_replace() {
+    let mut memo = MemoMap::new();
+    memo.insert("foo", "bar");
+    memo.replace("foo", "bar2");
+    assert_eq!(memo.get("foo"), Some(&"bar2"));
 }

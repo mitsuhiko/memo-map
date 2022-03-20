@@ -2,6 +2,10 @@
 
 All notable changes to memo-map are documented here.
 
+## 0.3.1
+
+* Added `MemoMap::replace`.
+
 ## 0.3.0
 
 * Box up individual values.  Previously this crate did not survive
