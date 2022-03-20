@@ -30,3 +30,18 @@ jobs:
           override: true
       - name: Test
         run: cargo check --all-features
+
+  miri-test-latest:
+    name: Miri Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          profile: minimal
+          components: miri
+          override: true
+      - name: Miri Test
+        run: make miri-test

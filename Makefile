@@ -9,6 +9,9 @@ doc:
 test:
 	@cargo test
 
+miri-test:
+	@MIRIFLAGS=-Zmiri-tag-raw-pointers cargo +nightly miri test
+
 format:
 	@rustup component add rustfmt 2> /dev/null
 	@cargo fmt --all
