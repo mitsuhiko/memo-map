@@ -4,7 +4,8 @@
 //! [`HashMap`] with some crucial differences:
 //!
 //! * Unlike a regular hash map, a memo map is thread safe and synchronized.
-//! * Once a value has been placed in the memo map it can be neither removed nor replaced.
+//! * Adding or retrieving keys works through a shared reference, removing only
+//!   through a mutable reference.
 //! * Retrieving a value from a memo map returns a plain old reference.
 //!
 //! Together these purposes allow one to use this type of structure to
@@ -31,6 +32,12 @@
 //! iteration.  This is potentially dangerous as it means you can easily
 //! deadlock yourself when trying to use the memo map while iterating.  The
 //! iteration functionality thus has to be used with great care.
+//!
+//! # Notes on Removal
+//!
+//! Items can be removed from a memo map but this operation requires a mutable
+//! reference to the memo map.  This is so that it can ensure that there are no
+//! borrows outstanding that would be invalidated through the removal of the item.
 use std::borrow::Borrow;
 use std::collections::hash_map::{Entry, RandomState};
 use std::collections::HashMap;
@@ -197,6 +204,24 @@ where
             .unwrap()
     }
 
+    /// Removes a key from the memo map, returning the value at the key if the key
+    /// was previously in the map.
+    ///
+    /// A key can only be removed if a mutable reference to the memo map exists.
+    /// In other words a key can not be removed if there can be borrows to the item.
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+    where
+        Q: Hash + Eq + ?Sized,
+        K: Borrow<Q>,
+    {
+        lock!(self.inner).remove(key)
+    }
+
+    /// Clears the map, removing all elements.
+    pub fn clear(&mut self) {
+        lock!(self.inner).clear();
+    }
+
     /// Returns the number of items in the map.
     ///
     /// # Example
@@ -318,4 +343,18 @@ fn test_contains() {
     memo.insert(1, "one");
     assert!(memo.contains_key(&1));
     assert!(!memo.contains_key(&2));
+}
+
+#[test]
+fn test_remove() {
+    let mut memo = MemoMap::new();
+    memo.insert(1, "one");
+    let value = memo.get(&1);
+    assert!(value.is_some());
+    drop(value);
+    let old_value = memo.remove(&1);
+    assert_eq!(old_value, Some("one"));
+    let value = memo.get(&1);
+    assert!(value.is_none());
+    drop(value);
 }
