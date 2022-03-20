@@ -9,6 +9,3 @@ description = "A crate implementing a synchronized map for memoization"
 repository = "https://github.com/mitsuhiko/memo-map"
 keywords = ["memo", "upsert"]
 readme = "README.md"
-
-[dependencies]
-stable_deref_trait = "1.2.0"

@@ -12,9 +12,8 @@
 //! implement something similar to lazy loading in places where the API
 //! has been constrained to references before.
 //!
-//! For this to work the value placed in the [`MemoMap`] has to implement
-//! [`StableDeref`].  If the value you want to place there does not implement
-//! it you can generally wrap it in a [`Box`].
+//! The values in the map are individually boxed up so that resizing of the
+//! map retains the previously issued references.
 //!
 //! ```
 //! use memo_map::MemoMap;
@@ -46,8 +45,6 @@ use std::hash::{BuildHasher, Hash};
 use std::mem::{transmute, ManuallyDrop};
 use std::sync::{Mutex, MutexGuard};
 
-use stable_deref_trait::StableDeref;
-
 macro_rules! lock {
     ($mutex:expr) => {
         match $mutex.lock() {
@@ -60,7 +57,7 @@ macro_rules! lock {
 /// An insert only, thread safe hash map to memoize values.
 #[derive(Debug)]
 pub struct MemoMap<K, V, S = RandomState> {
-    inner: Mutex<HashMap<K, V, S>>,
+    inner: Mutex<HashMap<K, Box<V>, S>>,
 }
 
 impl<K: Clone, V: Clone, S: Clone> Clone for MemoMap<K, V, S> {
@@ -101,7 +98,6 @@ impl<K, V, S> MemoMap<K, V, S> {
 impl<K, V, S> MemoMap<K, V, S>
 where
     K: Eq + Hash,
-    V: StableDeref,
     S: BuildHasher,
 {
     /// Inserts a value into the memo map.
@@ -116,7 +112,7 @@ where
         match inner.entry(key) {
             Entry::Occupied(_) => false,
             Entry::Vacant(vacant) => {
-                vacant.insert(value);
+                vacant.insert(Box::new(value));
                 true
             }
         }
@@ -145,7 +141,7 @@ where
     {
         let inner = lock!(self.inner);
         let value = inner.get(key)?;
-        Some(unsafe { transmute::<_, _>(value) })
+        Some(unsafe { transmute::<_, _>(&**value) })
     }
 
     /// Returns a reference to the value corresponding to the key or inserts.
@@ -166,10 +162,10 @@ where
         let value = if let Some(value) = inner.get(key) {
             value
         } else {
-            inner.insert(key.to_owned(), creator()?);
+            inner.insert(key.to_owned(), Box::new(creator()?));
             inner.get(key).unwrap()
         };
-        Ok(unsafe { transmute::<_, _>(value) })
+        Ok(unsafe { transmute::<_, _>(&**value) })
     }
 
     /// Returns a reference to the value corresponding to the key or inserts.
@@ -214,7 +210,7 @@ where
         Q: Hash + Eq + ?Sized,
         K: Borrow<Q>,
     {
-        lock!(self.inner).remove(key)
+        lock!(self.inner).remove(key).map(|x| *x)
     }
 
     /// Clears the map, removing all elements.
@@ -271,8 +267,8 @@ where
 /// This struct is created by the [`iter`](MemoMap::iter) method on [`MemoMap`].
 /// See its documentation for more information.
 pub struct Iter<'a, K, V, S> {
-    guard: ManuallyDrop<MutexGuard<'a, HashMap<K, V, S>>>,
-    iter: std::collections::hash_map::Iter<'a, K, V>,
+    guard: ManuallyDrop<MutexGuard<'a, HashMap<K, Box<V>, S>>>,
+    iter: std::collections::hash_map::Iter<'a, K, Box<V>>,
 }
 
 impl<'a, K, V, S> Drop for Iter<'a, K, V, S> {
@@ -287,7 +283,7 @@ impl<'a, K, V, S> Iterator for Iter<'a, K, V, S> {
     type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|(k, v)| (k, v))
+        self.iter.next().map(|(k, v)| (k, &**v))
     }
 }
 
@@ -369,4 +365,20 @@ fn test_clear() {
     memo.clear();
     assert_eq!(memo.len(), 0);
     assert!(memo.is_empty());
+}
+
+#[test]
+fn test_ref_after_resize() {
+    let memo = MemoMap::new();
+    let mut refs = Vec::new();
+
+    let iterations = if cfg!(miri) { 100 } else { 10000 };
+
+    for key in 0..iterations {
+        refs.push((key, memo.get_or_insert(&key, || Box::new(key))));
+    }
+    for (key, val) in refs {
+        dbg!(key, val);
+        assert_eq!(memo.get(&key), Some(val));
+    }
 }

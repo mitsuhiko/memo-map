@@ -2,6 +2,12 @@
 
 All notable changes to memo-map are documented here.
 
+## 0.3.0
+
+* Box up individual values.  Previously this crate did not survive
+  resizes of the map in all circumstances.  This no longer requiers
+  `StableDeref` now at the cost of potential extra allocations.
+
 ## 0.2.1
 
 * Fixed an incorrect statement in the readme.
