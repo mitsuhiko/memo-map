@@ -153,6 +153,20 @@ where
         Some(unsafe { transmute::<_, _>(&**value) })
     }
 
+    /// Returns a mutable reference to the value corresponding to the key.
+    ///
+    /// The key may be any borrowed form of the map's key type, but [`Hash`] and
+    /// [`Eq`] on the borrowed form must match those for the key type.
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
+        where
+            Q: Hash + Eq + ?Sized,
+            K: Borrow<Q>,
+    {
+        let mut inner = lock!(self.inner);
+        let value = inner.get_mut(key)?;
+        Some(unsafe { transmute::<_, _>(&mut **value) })
+    }
+
     /// Returns a reference to the value corresponding to the key or inserts.
     ///
     /// This is the preferred way to work with a memo map: if the value has not
@@ -395,5 +409,14 @@ fn test_replace() {
     let mut memo = MemoMap::new();
     memo.insert("foo", "bar");
     memo.replace("foo", "bar2");
+    assert_eq!(memo.get("foo"), Some(&"bar2"));
+}
+
+
+#[test]
+fn test_get_mut() {
+    let mut memo = MemoMap::new();
+    memo.insert("foo", "bar");
+    *memo.get_mut("foo").unwrap() = "bar2";
     assert_eq!(memo.get("foo"), Some(&"bar2"));
 }
