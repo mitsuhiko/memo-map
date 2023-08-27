@@ -356,12 +356,10 @@ fn test_remove() {
     memo.insert(1, "one");
     let value = memo.get(&1);
     assert!(value.is_some());
-    drop(value);
     let old_value = memo.remove(&1);
     assert_eq!(old_value, Some("one"));
     let value = memo.get(&1);
     assert!(value.is_none());
-    drop(value);
 }
 
 #[test]
