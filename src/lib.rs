@@ -277,7 +277,8 @@ where
     /// iterator element type is `(&'a K, &'a V)`.
     ///
     /// Important note: during iteration the map is locked!  This means that you
-    /// must not perform modifications to the map or you will run into deadlocks.
+    /// must not perform calls to the map or you will run into deadlocks.  This
+    /// makes the iterator rather useless in practice for a lot of operations.
     pub fn iter(&self) -> Iter<'_, K, V, S> {
         let guard = lock!(self.inner);
         let iter = guard.iter();
