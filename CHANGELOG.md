@@ -2,6 +2,10 @@
 
 All notable changes to memo-map are documented here.
 
+## 0.3.2
+
+* Added `MemoMap::get_mut`, `MemoMap::iter_mut` and `MemoMap::values_mut`.
+
 ## 0.3.1
 
 * Added `MemoMap::replace`.

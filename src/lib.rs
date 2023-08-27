@@ -54,6 +54,16 @@ macro_rules! lock {
     };
 }
 
+macro_rules! get_mut {
+    (let $target:ident, $mutex:expr) => {
+        let mut $target = $mutex.get_mut();
+        let $target = match $target {
+            Ok(guard) => guard,
+            Err(ref mut poisoned) => poisoned.get_mut(),
+        };
+    };
+}
+
 /// An insert only, thread safe hash map to memoize values.
 #[derive(Debug)]
 pub struct MemoMap<K, V, S = RandomState> {
@@ -162,13 +172,8 @@ where
         Q: Hash + Eq + ?Sized,
         K: Borrow<Q>,
     {
-        let mut inner = self.inner.get_mut();
-        let value = match inner {
-            Ok(inner) => inner,
-            Err(ref mut poisoned) => poisoned.get_mut(),
-        }
-        .get_mut(key)?;
-        Some(unsafe { transmute::<_, _>(&mut **value) })
+        get_mut!(let map, self.inner);
+        Some(unsafe { transmute::<_, _>(&mut **map.get_mut(key)?) })
     }
 
     /// Returns a reference to the value corresponding to the key or inserts.
@@ -282,6 +287,28 @@ where
         }
     }
 
+    /// An iterator visiting all key-value pairs in arbitrary order, with mutable
+    /// references to the values.  The iterator element type is `(&'a K, &'a mut V)`.
+    ///
+    /// This iterator requires a mutable reference to the map.
+    pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
+        get_mut!(let map, self.inner);
+        IterMut {
+            iter: unsafe { transmute::<_, _>(map.iter_mut()) },
+        }
+    }
+
+    /// An iterator visiting all values mutably in arbitrary order.  The iterator
+    /// element type is `&'a mut V`.
+    ///
+    /// This iterator requires a mutable reference to the map.
+    pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
+        get_mut!(let map, self.inner);
+        ValuesMut {
+            iter: unsafe { transmute::<_, _>(map.values_mut()) },
+        }
+    }
+
     /// An iterator visiting all keys in arbitrary order. The iterator element
     /// type is `&'a K`.
     pub fn keys(&self) -> Keys<'_, K, V, S> {
@@ -330,96 +357,147 @@ impl<'a, K, V, S> Iterator for Keys<'a, K, V, S> {
     }
 }
 
-#[test]
-fn test_insert() {
-    let memo = MemoMap::new();
-    assert!(memo.insert(23u32, Box::new(1u32)));
-    assert!(!memo.insert(23u32, Box::new(2u32)));
-    assert_eq!(memo.get(&23u32).cloned(), Some(Box::new(1)));
+/// A mutable iterator over a [`MemoMap`].
+pub struct IterMut<'a, K, V> {
+    iter: std::collections::hash_map::IterMut<'a, K, Box<V>>,
 }
 
-#[test]
-fn test_iter() {
-    let memo = MemoMap::new();
-    memo.insert(1, "one");
-    memo.insert(2, "two");
-    memo.insert(3, "three");
-    let mut values = memo.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
-    values.sort();
-    assert_eq!(values, vec![(1, "one"), (2, "two"), (3, "three")]);
-}
+impl<'a, K, V> Iterator for IterMut<'a, K, V> {
+    type Item = (&'a K, &'a mut V);
 
-#[test]
-fn test_keys() {
-    let memo = MemoMap::new();
-    memo.insert(1, "one");
-    memo.insert(2, "two");
-    memo.insert(3, "three");
-    let mut values = memo.keys().map(|k| *k).collect::<Vec<_>>();
-    values.sort();
-    assert_eq!(values, vec![1, 2, 3]);
-}
-
-#[test]
-fn test_contains() {
-    let memo = MemoMap::new();
-    memo.insert(1, "one");
-    assert!(memo.contains_key(&1));
-    assert!(!memo.contains_key(&2));
-}
-
-#[test]
-fn test_remove() {
-    let mut memo = MemoMap::new();
-    memo.insert(1, "one");
-    let value = memo.get(&1);
-    assert!(value.is_some());
-    let old_value = memo.remove(&1);
-    assert_eq!(old_value, Some("one"));
-    let value = memo.get(&1);
-    assert!(value.is_none());
-}
-
-#[test]
-fn test_clear() {
-    let mut memo = MemoMap::new();
-    memo.insert(1, "one");
-    memo.insert(2, "two");
-    assert_eq!(memo.len(), 2);
-    assert!(!memo.is_empty());
-    memo.clear();
-    assert_eq!(memo.len(), 0);
-    assert!(memo.is_empty());
-}
-
-#[test]
-fn test_ref_after_resize() {
-    let memo = MemoMap::new();
-    let mut refs = Vec::new();
-
-    let iterations = if cfg!(miri) { 100 } else { 10000 };
-
-    for key in 0..iterations {
-        refs.push((key, memo.get_or_insert(&key, || Box::new(key))));
-    }
-    for (key, val) in refs {
-        dbg!(key, val);
-        assert_eq!(memo.get(&key), Some(val));
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|(k, v)| (k, &mut **v))
     }
 }
 
-#[test]
-fn test_replace() {
-    let mut memo = MemoMap::new();
-    memo.insert("foo", "bar");
-    memo.replace("foo", "bar2");
-    assert_eq!(memo.get("foo"), Some(&"bar2"));
+/// A mutable iterator over a [`MemoMap`].
+pub struct ValuesMut<'a, K, V> {
+    iter: std::collections::hash_map::ValuesMut<'a, K, Box<V>>,
 }
 
-#[test]
-fn test_get_mut() {
-    let mut memo = MemoMap::new();
-    memo.insert("foo", "bar");
-    *memo.get_mut("foo").unwrap() = "bar2";
-    assert_eq!(memo.get("foo"), Some(&"bar2"));
+impl<'a, K, V> Iterator for ValuesMut<'a, K, V> {
+    type Item = &'a mut V;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|v| &mut **v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_insert() {
+        let memo = MemoMap::new();
+        assert!(memo.insert(23u32, Box::new(1u32)));
+        assert!(!memo.insert(23u32, Box::new(2u32)));
+        assert_eq!(memo.get(&23u32).cloned(), Some(Box::new(1)));
+    }
+
+    #[test]
+    fn test_iter() {
+        let memo = MemoMap::new();
+        memo.insert(1, "one");
+        memo.insert(2, "two");
+        memo.insert(3, "three");
+        let mut values = memo.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
+        values.sort();
+        assert_eq!(values, vec![(1, "one"), (2, "two"), (3, "three")]);
+    }
+
+    #[test]
+    fn test_keys() {
+        let memo = MemoMap::new();
+        memo.insert(1, "one");
+        memo.insert(2, "two");
+        memo.insert(3, "three");
+        let mut values = memo.keys().map(|k| *k).collect::<Vec<_>>();
+        values.sort();
+        assert_eq!(values, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_contains() {
+        let memo = MemoMap::new();
+        memo.insert(1, "one");
+        assert!(memo.contains_key(&1));
+        assert!(!memo.contains_key(&2));
+    }
+
+    #[test]
+    fn test_remove() {
+        let mut memo = MemoMap::new();
+        memo.insert(1, "one");
+        let value = memo.get(&1);
+        assert!(value.is_some());
+        let old_value = memo.remove(&1);
+        assert_eq!(old_value, Some("one"));
+        let value = memo.get(&1);
+        assert!(value.is_none());
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut memo = MemoMap::new();
+        memo.insert(1, "one");
+        memo.insert(2, "two");
+        assert_eq!(memo.len(), 2);
+        assert!(!memo.is_empty());
+        memo.clear();
+        assert_eq!(memo.len(), 0);
+        assert!(memo.is_empty());
+    }
+
+    #[test]
+    fn test_ref_after_resize() {
+        let memo = MemoMap::new();
+        let mut refs = Vec::new();
+
+        let iterations = if cfg!(miri) { 100 } else { 10000 };
+
+        for key in 0..iterations {
+            refs.push((key, memo.get_or_insert(&key, || Box::new(key))));
+        }
+        for (key, val) in refs {
+            dbg!(key, val);
+            assert_eq!(memo.get(&key), Some(val));
+        }
+    }
+
+    #[test]
+    fn test_replace() {
+        let mut memo = MemoMap::new();
+        memo.insert("foo", "bar");
+        memo.replace("foo", "bar2");
+        assert_eq!(memo.get("foo"), Some(&"bar2"));
+    }
+
+    #[test]
+    fn test_get_mut() {
+        let mut memo = MemoMap::new();
+        memo.insert("foo", "bar");
+        *memo.get_mut("foo").unwrap() = "bar2";
+        assert_eq!(memo.get("foo"), Some(&"bar2"));
+    }
+
+    #[test]
+    fn test_iter_mut() {
+        let mut memo = MemoMap::new();
+        memo.insert("foo", "bar");
+        for item in memo.iter_mut() {
+            *item.1 = "bar2";
+        }
+        assert_eq!(memo.get("foo"), Some(&"bar2"));
+    }
+
+    #[test]
+    fn test_values_mut() {
+        let mut memo = MemoMap::new();
+        memo.insert("foo", "bar");
+        for item in memo.values_mut() {
+            *item = "bar2";
+        }
+        assert_eq!(memo.get("foo"), Some(&"bar2"));
+    }
 }
