@@ -158,9 +158,9 @@ where
     /// The key may be any borrowed form of the map's key type, but [`Hash`] and
     /// [`Eq`] on the borrowed form must match those for the key type.
     pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
-        where
-            Q: Hash + Eq + ?Sized,
-            K: Borrow<Q>,
+    where
+        Q: Hash + Eq + ?Sized,
+        K: Borrow<Q>,
     {
         let mut inner = lock!(self.inner);
         let value = inner.get_mut(key)?;
@@ -411,7 +411,6 @@ fn test_replace() {
     memo.replace("foo", "bar2");
     assert_eq!(memo.get("foo"), Some(&"bar2"));
 }
-
 
 #[test]
 fn test_get_mut() {
