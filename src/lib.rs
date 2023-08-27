@@ -162,8 +162,12 @@ where
         Q: Hash + Eq + ?Sized,
         K: Borrow<Q>,
     {
-        let mut inner = lock!(self.inner);
-        let value = inner.get_mut(key)?;
+        let mut inner = self.inner.get_mut();
+        let value = match inner {
+            Ok(inner) => inner,
+            Err(ref mut poisoned) => poisoned.get_mut(),
+        }
+        .get_mut(key)?;
         Some(unsafe { transmute::<_, _>(&mut **value) })
     }
 
