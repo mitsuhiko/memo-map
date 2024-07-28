@@ -2,6 +2,10 @@
 
 All notable changes to memo-map are documented here.
 
+## 0.3.3
+
+* Added `MemoMap::get_or_insert_owned` and `MemoMap::get_or_try_insert_owned`.
+
 ## 0.3.2
 
 * Added `MemoMap::get_mut`, `MemoMap::iter_mut` and `MemoMap::values_mut`.
