@@ -38,7 +38,7 @@
 //! reference to the memo map.  This is so that it can ensure that there are no
 //! borrows outstanding that would be invalidated through the removal of the item.
 use std::borrow::Borrow;
-use std::collections::hash_map::{Entry, RandomState};
+use std::collections::hash_map::{self, Entry, RandomState};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::hash::{BuildHasher, Hash};
@@ -160,7 +160,7 @@ where
     {
         let inner = lock!(self.inner);
         let value = inner.get(key)?;
-        Some(unsafe { transmute::<_, _>(&**value) })
+        Some(unsafe { transmute::<&V, &V>(&**value) })
     }
 
     /// Returns a mutable reference to the value corresponding to the key.
@@ -173,7 +173,7 @@ where
         K: Borrow<Q>,
     {
         get_mut!(let map, self.inner);
-        Some(unsafe { transmute::<_, _>(&mut **map.get_mut(key)?) })
+        Some(unsafe { transmute::<&mut V, &mut V>(&mut **map.get_mut(key)?) })
     }
 
     /// Returns a reference to the value corresponding to the key or inserts.
@@ -197,7 +197,7 @@ where
             inner.insert(key.to_owned(), Box::new(creator()?));
             inner.get(key).unwrap()
         };
-        Ok(unsafe { transmute::<_, _>(&**value) })
+        Ok(unsafe { transmute::<&V, &V>(&**value) })
     }
 
     /// Like [`get_or_insert`](Self::get_or_insert) but with an owned key.
@@ -222,7 +222,7 @@ where
             Entry::Occupied(ref val) => val.get(),
             Entry::Vacant(entry) => entry.insert(Box::new(creator()?)),
         };
-        Ok(unsafe { transmute::<_, _>(&**value) })
+        Ok(unsafe { transmute::<&V, &V>(&**value) })
     }
 
     /// Returns a reference to the value corresponding to the key or inserts.
@@ -308,7 +308,9 @@ where
         let guard = lock!(self.inner);
         let iter = guard.iter();
         Iter {
-            iter: unsafe { transmute::<_, _>(iter) },
+            iter: unsafe {
+                transmute::<hash_map::Iter<'_, K, Box<V>>, hash_map::Iter<'_, K, Box<V>>>(iter)
+            },
             guard: ManuallyDrop::new(guard),
         }
     }
@@ -320,7 +322,11 @@ where
     pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
         get_mut!(let map, self.inner);
         IterMut {
-            iter: unsafe { transmute::<_, _>(map.iter_mut()) },
+            iter: unsafe {
+                transmute::<hash_map::IterMut<'_, K, Box<V>>, hash_map::IterMut<'_, K, Box<V>>>(
+                    map.iter_mut(),
+                )
+            },
         }
     }
 
@@ -331,7 +337,11 @@ where
     pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
         get_mut!(let map, self.inner);
         ValuesMut {
-            iter: unsafe { transmute::<_, _>(map.values_mut()) },
+            iter: unsafe {
+                transmute::<hash_map::ValuesMut<'_, K, Box<V>>, hash_map::ValuesMut<'_, K, Box<V>>>(
+                    map.values_mut(),
+                )
+            },
         }
     }
 
@@ -348,7 +358,7 @@ where
 /// See its documentation for more information.
 pub struct Iter<'a, K, V, S> {
     guard: ManuallyDrop<MutexGuard<'a, HashMap<K, Box<V>, S>>>,
-    iter: std::collections::hash_map::Iter<'a, K, Box<V>>,
+    iter: hash_map::Iter<'a, K, Box<V>>,
 }
 
 impl<'a, K, V, S> Drop for Iter<'a, K, V, S> {
@@ -385,7 +395,7 @@ impl<'a, K, V, S> Iterator for Keys<'a, K, V, S> {
 
 /// A mutable iterator over a [`MemoMap`].
 pub struct IterMut<'a, K, V> {
-    iter: std::collections::hash_map::IterMut<'a, K, Box<V>>,
+    iter: hash_map::IterMut<'a, K, Box<V>>,
 }
 
 impl<'a, K, V> Iterator for IterMut<'a, K, V> {
@@ -398,7 +408,7 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
 
 /// A mutable iterator over a [`MemoMap`].
 pub struct ValuesMut<'a, K, V> {
-    iter: std::collections::hash_map::ValuesMut<'a, K, Box<V>>,
+    iter: hash_map::ValuesMut<'a, K, Box<V>>,
 }
 
 impl<'a, K, V> Iterator for ValuesMut<'a, K, V> {
