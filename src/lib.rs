@@ -200,6 +200,31 @@ where
         Ok(unsafe { transmute::<_, _>(&**value) })
     }
 
+    /// Like [`get_or_insert`](Self::get_or_insert) but with an owned key.
+    pub fn get_or_insert_owned<F>(&self, key: K, creator: F) -> &V
+    where
+        F: FnOnce() -> V,
+    {
+        self.get_or_try_insert_owned(key, || Ok::<_, Infallible>(creator()))
+            .unwrap()
+    }
+
+    /// Like [`get_or_try_insert`](Self::get_or_try_insert) but with an owned key.
+    ///
+    /// If the creator is infallible, [`get_or_insert_owned`](Self::get_or_insert_owned) can be used.
+    pub fn get_or_try_insert_owned<F, E>(&self, key: K, creator: F) -> Result<&V, E>
+    where
+        F: FnOnce() -> Result<V, E>,
+    {
+        let mut inner = lock!(self.inner);
+        let entry = inner.entry(key);
+        let value = match entry {
+            Entry::Occupied(ref val) => val.get(),
+            Entry::Vacant(entry) => entry.insert(Box::new(creator()?)),
+        };
+        Ok(unsafe { transmute::<_, _>(&**value) })
+    }
+
     /// Returns a reference to the value corresponding to the key or inserts.
     ///
     /// This is the preferred way to work with a memo map: if the value has not
@@ -228,7 +253,7 @@ where
         K: Borrow<Q>,
         F: FnOnce() -> V,
     {
-        self.get_or_try_insert::<_, _, Infallible>(key, || Ok(creator()))
+        self.get_or_try_insert(key, || Ok::<_, Infallible>(creator()))
             .unwrap()
     }
 
@@ -463,6 +488,25 @@ mod tests {
         for (key, val) in refs {
             dbg!(key, val);
             assert_eq!(memo.get(&key), Some(val));
+        }
+    }
+
+    #[test]
+    fn test_ref_after_resize_owned() {
+        let memo = MemoMap::new();
+        let mut refs = Vec::new();
+
+        let iterations = if cfg!(miri) { 100 } else { 10000 };
+
+        for key in 0..iterations {
+            refs.push((
+                key,
+                memo.get_or_insert_owned(key.to_string(), || Box::new(key)),
+            ));
+        }
+        for (key, val) in refs {
+            dbg!(key, val);
+            assert_eq!(memo.get(&key.to_string()), Some(val));
         }
     }
 
