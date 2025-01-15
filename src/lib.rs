@@ -361,7 +361,7 @@ pub struct Iter<'a, K, V, S> {
     iter: hash_map::Iter<'a, K, Box<V>>,
 }
 
-impl<'a, K, V, S> Drop for Iter<'a, K, V, S> {
+impl<K, V, S> Drop for Iter<'_, K, V, S> {
     fn drop(&mut self) {
         unsafe {
             ManuallyDrop::drop(&mut self.guard);
@@ -448,7 +448,7 @@ mod tests {
         memo.insert(1, "one");
         memo.insert(2, "two");
         memo.insert(3, "three");
-        let mut values = memo.keys().map(|k| *k).collect::<Vec<_>>();
+        let mut values = memo.keys().copied().collect::<Vec<_>>();
         values.sort();
         assert_eq!(values, vec![1, 2, 3]);
     }
