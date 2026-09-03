@@ -2,7 +2,7 @@
 
 All notable changes to memo-map are documented here.
 
-## Unreleased
+## 0.3.4
 
 * Fixed key references from `iter` and `keys` becoming dangling when an insertion resized the map.
 * Fixed `MemoMap` being `Sync` when its key or value type was not `Sync`.
